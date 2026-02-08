@@ -1034,6 +1034,41 @@ export function createWorkspaceStore(options: {
       options.setBaseUrl(nextBaseUrl);
       options.setClientDirectory(resolvedDirectory);
 
+      // Web builds don't have a persisted workspace list (Tauri handles that).
+      // If the user connects directly to an OpenCode server, synthesize a single
+      // remote workspace so Sessions can be browsed via the sidebar.
+      if (!isTauriRuntime()) {
+        const reason = context?.reason ?? "";
+        const shouldCreateWorkspace =
+          (reason === "auto-attach" || reason === "dashboard-connect") &&
+          workspaces().length === 0;
+
+        if (shouldCreateWorkspace) {
+          const dir = resolvedDirectory.trim();
+          const base = nextBaseUrl.replace(/\/+$/, "");
+          const workspaceId = `opencode:${base}:${dir}`;
+          const name = dir
+            ? dir.replace(/\\/g, "/").split("/").filter(Boolean).pop() ?? "OpenCode"
+            : "OpenCode";
+
+          const nextWorkspace: WorkspaceInfo = {
+            id: workspaceId,
+            name,
+            path: "",
+            preset: "remote",
+            workspaceType: "remote",
+            remoteType: "opencode",
+            baseUrl: base,
+            directory: dir ? dir : null,
+            displayName: null,
+          };
+
+          setWorkspaces([nextWorkspace]);
+          syncActiveWorkspaceId(workspaceId);
+          updateWorkspaceConnectionState(workspaceId, { status: "connected", message: null });
+        }
+      }
+
       const targetRoot = context?.targetRoot ?? (resolvedDirectory || activeWorkspaceRoot().trim());
       wsDebug("connect:loadSessions", { targetRoot, resolvedDirectory });
       const sessionsAt = Date.now();

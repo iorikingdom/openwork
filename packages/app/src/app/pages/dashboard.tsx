@@ -69,6 +69,7 @@ export type DashboardViewProps = {
   startupPreference: StartupPreference | null;
   baseUrl: string;
   clientConnected: boolean;
+  connectOpencode: () => void;
   busy: boolean;
   busyHint: string | null;
   busyLabel: string | null;
@@ -1005,11 +1006,27 @@ export default function DashboardView(props: DashboardViewProps) {
               <div class="absolute left-0 right-0 top-full mt-2 rounded-lg border border-dls-border bg-dls-surface shadow-xl overflow-hidden z-20">
                 <button
                   type="button"
+                  class="w-full flex items-center gap-2 px-3 py-2 text-xs text-dls-secondary hover:text-dls-text hover:bg-dls-hover transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                  disabled={props.busy || props.clientConnected}
+                  title={props.clientConnected ? "Already connected to OpenCode." : undefined}
+                  onClick={() => {
+                    props.connectOpencode();
+                    setAddWorkspaceMenuOpen(false);
+                  }}
+                >
+                  <Zap size={12} />
+                  Connect OpenCode
+                </button>
+                <button
+                  type="button"
                   class="w-full flex items-center gap-2 px-3 py-2 text-xs text-dls-secondary hover:text-dls-text hover:bg-dls-hover transition-colors"
                   onClick={() => {
+                    if (!isTauriRuntime()) return;
                     props.openCreateWorkspace();
                     setAddWorkspaceMenuOpen(false);
                   }}
+                  disabled={!isTauriRuntime()}
+                  title={!isTauriRuntime() ? "Local workspaces require the desktop app." : undefined}
                 >
                   <Plus size={12} />
                   New workspace
@@ -1028,8 +1045,10 @@ export default function DashboardView(props: DashboardViewProps) {
                 <button
                   type="button"
                   class="w-full flex items-center gap-2 px-3 py-2 text-xs text-dls-secondary hover:text-dls-text hover:bg-dls-hover transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-                  disabled={props.importingWorkspaceConfig}
+                  disabled={props.importingWorkspaceConfig || !isTauriRuntime()}
+                  title={!isTauriRuntime() ? "Importing config requires the desktop app." : undefined}
                   onClick={() => {
+                    if (!isTauriRuntime()) return;
                     props.importWorkspaceConfig();
                     setAddWorkspaceMenuOpen(false);
                   }}
@@ -1116,6 +1135,8 @@ export default function DashboardView(props: DashboardViewProps) {
                 createSessionAndOpen={props.createSessionAndOpen}
                 setPrompt={props.setPrompt}
                 newTaskDisabled={props.newTaskDisabled}
+                clientConnected={props.clientConnected}
+                openConnect={props.connectOpencode}
               />
             </Match>
             <Match when={props.tab === "skills"}>

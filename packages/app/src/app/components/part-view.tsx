@@ -353,39 +353,86 @@ export default function PartView(props: Props) {
       </Match>
 
       <Match when={p().type === "file"}>
-        <Show when={fileInfo()}>
-          {(info) => (
-            <div
-              class={`flex items-center gap-3 rounded-xl border px-3 py-2 ${
-                tone() === "dark" ? "border-gray-6 bg-gray-1/60" : "border-gray-6/70 bg-gray-2/40"
-              }`.trim()}
-            >
-              <div
-                class={`h-9 w-9 rounded-lg flex items-center justify-center ${
-                  tone() === "dark" ? "bg-gray-12/10 text-gray-12" : "bg-gray-2/70 text-gray-11"
-                }`.trim()}
-              >
-                <File size={16} />
-              </div>
-              <div class="min-w-0 flex-1">
-                <div class={`text-sm font-medium truncate ${textClass()}`.trim()}>{info().title}</div>
-                <Show when={info().detail}>
-                  <div class={`text-[11px] truncate ${subtleTextClass()}`.trim()}>{info().detail}</div>
-                </Show>
-              </div>
-              <Show when={info().mime}>
+        <Show
+          when={inlineImage()}
+          fallback={
+            <Show when={fileInfo()}>
+              {(info) => (
                 <div
-                  class={`text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full max-w-[160px] truncate ${
-                    tone() === "dark"
-                      ? "bg-gray-12/10 text-gray-12/80"
-                      : "bg-gray-1/70 text-gray-9"
+                  class={`flex items-center gap-3 rounded-xl border px-3 py-2 ${
+                    tone() === "dark" ? "border-gray-6 bg-gray-1/60" : "border-gray-6/70 bg-gray-2/40"
                   }`.trim()}
                 >
-                  {info().mime}
+                  <div
+                    class={`h-9 w-9 rounded-lg flex items-center justify-center ${
+                      tone() === "dark" ? "bg-gray-12/10 text-gray-12" : "bg-gray-2/70 text-gray-11"
+                    }`.trim()}
+                  >
+                    <File size={16} />
+                  </div>
+                  <div class="min-w-0 flex-1">
+                    <div class={`text-sm font-medium truncate ${textClass()}`.trim()}>{info().title}</div>
+                    <Show when={info().detail}>
+                      <div class={`text-[11px] truncate ${subtleTextClass()}`.trim()}>{info().detail}</div>
+                    </Show>
+                  </div>
+                  <Show when={info().mime}>
+                    <div
+                      class={`text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full max-w-[160px] truncate ${
+                        tone() === "dark"
+                          ? "bg-gray-12/10 text-gray-12/80"
+                          : "bg-gray-1/70 text-gray-9"
+                      }`.trim()}
+                    >
+                      {info().mime}
+                    </div>
+                  </Show>
                 </div>
-              </Show>
-            </div>
-          )}
+              )}
+            </Show>
+          }
+        >
+          <div class="grid gap-2">
+            <img
+              src={inlineImage()!}
+              alt=""
+              class="max-w-full h-auto rounded-xl border border-gray-6/50"
+            />
+            <Show when={fileInfo()}>
+              {(info) => (
+                <div
+                  class={`flex items-center gap-3 rounded-xl border px-3 py-2 ${
+                    tone() === "dark" ? "border-gray-6 bg-gray-1/60" : "border-gray-6/70 bg-gray-2/40"
+                  }`.trim()}
+                >
+                  <div
+                    class={`h-9 w-9 rounded-lg flex items-center justify-center ${
+                      tone() === "dark" ? "bg-gray-12/10 text-gray-12" : "bg-gray-2/70 text-gray-11"
+                    }`.trim()}
+                  >
+                    <File size={16} />
+                  </div>
+                  <div class="min-w-0 flex-1">
+                    <div class={`text-sm font-medium truncate ${textClass()}`.trim()}>{info().title}</div>
+                    <Show when={info().detail}>
+                      <div class={`text-[11px] truncate ${subtleTextClass()}`.trim()}>{info().detail}</div>
+                    </Show>
+                  </div>
+                  <Show when={info().mime}>
+                    <div
+                      class={`text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full max-w-[160px] truncate ${
+                        tone() === "dark"
+                          ? "bg-gray-12/10 text-gray-12/80"
+                          : "bg-gray-1/70 text-gray-9"
+                      }`.trim()}
+                    >
+                      {info().mime}
+                    </div>
+                  </Show>
+                </div>
+              )}
+            </Show>
+          </div>
         </Show>
       </Match>
 
@@ -531,14 +578,6 @@ export default function PartView(props: Props) {
             </Show>
           </div>
         </Show>
-      </Match>
-
-      <Match when={inlineImage()}>
-        <img
-          src={inlineImage()!}
-          alt=""
-          class="max-w-full h-auto rounded-xl border border-gray-6/50"
-        />
       </Match>
 
       <Match when={p().type === "step-start" || p().type === "step-finish"}>

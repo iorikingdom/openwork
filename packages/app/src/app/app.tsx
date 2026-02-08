@@ -563,6 +563,7 @@ export default function App() {
   const [busy, setBusy] = createSignal(false);
   const [busyLabel, setBusyLabel] = createSignal<string | null>(null);
   const [busyStartedAt, setBusyStartedAt] = createSignal<number | null>(null);
+  const [abortBusy, setAbortBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [opencodeConnectStatus, setOpencodeConnectStatus] = createSignal<OpencodeConnectStatus | null>(null);
   const [booting, setBooting] = createSignal(true);
@@ -659,6 +660,7 @@ export default function App() {
     renameSession,
     respondPermission,
     respondQuestion,
+    rejectQuestion,
     setSessions,
     setSessionStatusById,
     setMessages,
@@ -918,6 +920,29 @@ export default function App() {
       setBusyStartedAt(null);
     }
   }
+
+  const abortSelectedSession = async () => {
+    const c = client();
+    const sessionID = selectedSessionId();
+    if (!c || !sessionID || abortBusy()) return;
+
+    setAbortBusy(true);
+    setError(null);
+
+    try {
+      unwrap(
+        await c.session.abort({
+          sessionID,
+          directory: workspaceProjectDir().trim() || undefined,
+        }),
+      );
+    } catch (e) {
+      const message = e instanceof Error ? e.message : safeStringify(e);
+      setError(addOpencodeCacheHint(message));
+    } finally {
+      setAbortBusy(false);
+    }
+  };
 
   async function renameSessionTitle(sessionID: string, title: string) {
     const trimmed = title.trim();
@@ -2748,6 +2773,7 @@ export default function App() {
     authorizedFolders: false,
   });
   const [autoConnectAttempted, setAutoConnectAttempted] = createSignal(false);
+  const [autoAttachAttempted, setAutoAttachAttempted] = createSignal(false);
 
   const [appVersion, setAppVersion] = createSignal<string | null>(null);
 
@@ -2791,6 +2817,43 @@ export default function App() {
 
     setAutoConnectAttempted(true);
     void workspaceStore.onConnectClient();
+  });
+
+  createEffect(() => {
+    if (autoAttachAttempted()) return;
+    if (client()) return;
+
+    // Don't compete with explicit connection/engine transitions.
+    const label = busyLabel();
+    if (
+      busy() &&
+      (label === "status.connecting" ||
+        label === "status.starting_engine" ||
+        label === "status.disconnecting")
+    ) {
+      return;
+    }
+
+    // If we're already connected to an OpenWork server, prefer that path.
+    if (openworkServerStatus() === "connected") return;
+
+    const url = baseUrl().trim();
+    if (!url) return;
+
+    // Avoid surprising remote traffic. If users want a remote server, they'll
+    // connect explicitly (or via OpenWork server settings).
+    const lower = url.toLowerCase();
+    const isLocal = lower.includes("127.0.0.1") || lower.includes("localhost");
+    if (!isLocal) return;
+
+    setAutoAttachAttempted(true);
+    void workspaceStore.connectToServer(
+      url,
+      clientDirectory().trim() || undefined,
+      { workspaceType: "remote", reason: "auto-attach" },
+      undefined,
+      { quiet: true, navigate: false },
+    );
   });
 
   createEffect(() => {
@@ -4272,6 +4335,20 @@ export default function App() {
       startupPreference: startupPreference(),
       baseUrl: baseUrl(),
       clientConnected: Boolean(client()),
+      connectOpencode: () => {
+        const url = baseUrl().trim();
+        if (!url) {
+          setError("OpenCode base URL is required.");
+          return;
+        }
+        void workspaceStore.connectToServer(
+          url,
+          clientDirectory().trim() || undefined,
+          { workspaceType: "remote", reason: "dashboard-connect" },
+          undefined,
+          { navigate: false },
+        );
+      },
       busy: busy(),
       busyHint: busyHint(),
       busyLabel: busyLabel(),
@@ -4528,6 +4605,8 @@ export default function App() {
     workingFiles: activeWorkingFiles(),
     authorizedDirs: activeAuthorizedDirs(),
     busy: busy(),
+    abortBusy: abortBusy(),
+    abortRun: abortSelectedSession,
     prompt: prompt(),
     setPrompt: setPrompt,
     activePermission: activePermissionMemo(),
@@ -4537,6 +4616,7 @@ export default function App() {
     activeQuestion: activeQuestion(),
     questionReplyBusy: questionReplyBusy(),
     respondQuestion: respondQuestion,
+    rejectQuestion: rejectQuestion,
     safeStringify: safeStringify,
     showTryNotionPrompt: tryNotionPromptVisible() && notionIsActive(),
     startProviderAuth: startProviderAuth,

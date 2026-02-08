@@ -130,6 +130,8 @@ export type SessionViewProps = {
   skills: SkillCard[];
   skillsStatus: string | null;
   busy: boolean;
+  abortBusy: boolean;
+  abortRun: () => void;
   prompt: string;
   setPrompt: (value: string) => void;
   selectedSessionModelLabel: string;
@@ -146,6 +148,7 @@ export type SessionViewProps = {
   activeQuestion: PendingQuestion | null;
   questionReplyBusy: boolean;
   respondQuestion: (requestID: string, answers: string[][]) => void;
+  rejectQuestion: (requestID: string) => void;
   safeStringify: (value: unknown) => string;
   error: string | null;
   sessionStatus: string;
@@ -187,6 +190,20 @@ export default function SessionView(props: SessionViewProps) {
   const [agentOptions, setAgentOptions] = createSignal<Agent[]>([]);
   const [autoScrollEnabled, setAutoScrollEnabled] = createSignal(false);
   const [scrollOnNextUpdate, setScrollOnNextUpdate] = createSignal(false);
+  const [questionModalOpen, setQuestionModalOpen] = createSignal(false);
+
+  createEffect(
+    on(
+      () => props.activeQuestion?.id ?? null,
+      (requestId) => {
+        if (!requestId) {
+          setQuestionModalOpen(false);
+          return;
+        }
+        setQuestionModalOpen(true);
+      },
+    ),
+  );
 
   // When a session is selected (i.e. we are in SessionView), the right sidebar is
   // navigation-only. Avoid showing any tab as "selected" to reduce confusion.
@@ -211,6 +228,7 @@ export default function SessionView(props: SessionViewProps) {
     if (!total) return "";
     return `${todoCompletedCount()} out of ${total} tasks completed`;
   });
+  const canStop = createMemo(() => props.sessionStatus === "running" || props.sessionStatus === "retry");
   const MAX_SESSIONS_PREVIEW = 3;
   const COLLAPSED_SESSIONS_PREVIEW = 1;
   const [expandedWorkspaceIds, setExpandedWorkspaceIds] = createSignal<Set<string>>(
@@ -1704,9 +1722,35 @@ export default function SessionView(props: SessionViewProps) {
         </div>
       </Show>
 
+      <Show when={props.activeQuestion && !questionModalOpen()}>
+        <div class="mx-auto w-full max-w-[68ch] px-4">
+          <div class="rounded-xl border border-amber-7/40 bg-amber-2/60 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+            <div class="text-sm text-amber-11">
+              OpenCode is waiting for your answer to continue.
+            </div>
+            <div class="flex items-center gap-2">
+              <Button variant="outline" class="text-xs" onClick={() => setQuestionModalOpen(true)}>
+                Answer
+              </Button>
+              <Button
+                variant="ghost"
+                class="text-xs"
+                disabled={props.questionReplyBusy}
+                onClick={() => props.activeQuestion && props.rejectQuestion(props.activeQuestion.id)}
+              >
+                Can't answer
+              </Button>
+            </div>
+          </div>
+        </div>
+      </Show>
+
       <Composer
         prompt={props.prompt}
         busy={props.busy}
+        canStop={canStop()}
+        stopBusy={props.abortBusy}
+        onStop={props.abortRun}
         onSend={handleSendPrompt}
         onDraftChange={handleDraftChange}
         selectedModelLabel={props.selectedSessionModelLabel || "Model"}
@@ -1949,10 +1993,15 @@ export default function SessionView(props: SessionViewProps) {
       </Show>
 
       <QuestionModal
-        open={Boolean(props.activeQuestion)}
+        open={questionModalOpen()}
         questions={props.activeQuestion?.questions ?? []}
         busy={props.questionReplyBusy}
-        onClose={() => { }}
+        onClose={() => setQuestionModalOpen(false)}
+        onReject={() => {
+          const id = props.activeQuestion?.id;
+          if (!id) return;
+          props.rejectQuestion(id);
+        }}
         onReply={(answers) => {
           if (props.activeQuestion) {
             props.respondQuestion(props.activeQuestion.id, answers);

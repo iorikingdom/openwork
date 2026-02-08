@@ -1,7 +1,7 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import type { Agent } from "@opencode-ai/sdk/v2/client";
 import fuzzysort from "fuzzysort";
-import { ArrowUp, AtSign, Check, ChevronDown, File as FileIcon, Paperclip, Terminal, X, Zap } from "lucide-solid";
+import { ArrowUp, AtSign, Check, ChevronDown, File as FileIcon, Paperclip, Square, Terminal, X, Zap } from "lucide-solid";
 
 import type { ComposerAttachment, ComposerDraft, ComposerPart, PromptMode, SlashCommandOption } from "../../types";
 
@@ -22,6 +22,9 @@ type MentionGroup = {
 type ComposerProps = {
   prompt: string;
   busy: boolean;
+  canStop: boolean;
+  stopBusy: boolean;
+  onStop: () => void;
   onSend: (draft: ComposerDraft) => void;
   onDraftChange: (draft: ComposerDraft) => void;
   selectedModelLabel: string;
@@ -954,7 +957,7 @@ export default function Composer(props: ComposerProps) {
 
     if (event.key === "Enter") {
       event.preventDefault();
-      if (props.busy) return;
+      if (props.busy || props.canStop) return;
       sendDraft();
     }
   };
@@ -1434,12 +1437,27 @@ export default function Composer(props: ComposerProps) {
                         </div>
                       </div>
                       <div class="flex items-center gap-3 text-dls-secondary">
+                        <Show when={props.canStop}>
+                          <button
+                            type="button"
+                            disabled={props.stopBusy}
+                            onClick={props.onStop}
+                            class={`p-1.5 rounded-full border transition-colors ${
+                              props.stopBusy
+                                ? "bg-red-3/40 text-red-10 border-red-7/40 cursor-wait"
+                                : "bg-red-3/60 text-red-11 border-red-7/50 hover:bg-red-4/60"
+                            }`}
+                            title="Stop"
+                          >
+                            <Square size={16} />
+                          </button>
+                        </Show>
                         <button
                           type="button"
-                          disabled={!props.prompt.trim() && !attachments().length}
+                          disabled={props.busy || props.canStop || (!props.prompt.trim() && !attachments().length)}
                           onClick={sendDraft}
                           class={`p-1.5 rounded-full ${
-                            !props.prompt.trim() && !attachments().length
+                            props.busy || props.canStop || (!props.prompt.trim() && !attachments().length)
                               ? "bg-dls-active text-dls-secondary"
                               : "bg-dls-accent text-white"
                           }`}

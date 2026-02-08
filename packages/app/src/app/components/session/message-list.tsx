@@ -1,10 +1,10 @@
-import { For, Show, createMemo, createSignal, onCleanup } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import type { JSX } from "solid-js";
 import type { Part } from "@opencode-ai/sdk/v2/client";
-import { Check, ChevronDown, ChevronRight, Copy, Eye, File, FileEdit, FolderSearch, Pencil, Search, Sparkles, Terminal } from "lucide-solid";
+import { Check, ChevronDown, ChevronRight, Copy, Eye, File, FileEdit, FolderSearch, Pencil, Search, Sparkles, Terminal, X } from "lucide-solid";
 
 import type { MessageGroup, MessageWithParts } from "../../types";
-import { classifyTool, groupMessageParts, summarizeStep } from "../../utils";
+import { classifyTool, groupMessageParts, isTauriRuntime, summarizeStep } from "../../utils";
 import PartView from "../part-view";
 
 export type MessageListProps = {
@@ -84,25 +84,131 @@ function countSteps(partsGroups: Part[][]): number {
 
 export default function MessageList(props: MessageListProps) {
   const [copyingId, setCopyingId] = createSignal<string | null>(null);
+  const [expandedImage, setExpandedImage] = createSignal<{ url: string; filename: string; mime: string } | null>(
+    null,
+  );
   let copyTimeout: number | undefined;
+
+  const normalizeDataImageUrl = (data: string, mediaType?: string) => {
+    if (!data) return "";
+    if (data.startsWith("data:")) return data;
+    const mt = typeof mediaType === "string" && mediaType.trim() ? mediaType.trim() : "image/png";
+    return `data:${mt};base64,${data}`;
+  };
+
+  const inferMimeFromDataUrl = (url: string) => {
+    const match = url.match(/^data:([^;,]+)[;,]/i);
+    const mime = match?.[1]?.trim();
+    return mime || null;
+  };
+
+  const isDisplayableAttachmentUrl = (url: unknown) => {
+    if (typeof url !== "string") return false;
+    const trimmed = url.trim();
+    if (!trimmed) return false;
+    if (trimmed.startsWith("file://")) return isTauriRuntime();
+    // Allow http(s) + data: (images from tools are often data URLs).
+    return true;
+  };
+
   const isAttachmentPart = (part: Part) => {
     if (part.type !== "file") return false;
-    const url = (part as { url?: string }).url;
-    return typeof url === "string" && !url.startsWith("file://");
+    const record = part as { url?: string; mime?: string };
+    const url = record.url;
+    if (typeof url !== "string" || !url.trim()) return false;
+    if (url.startsWith("file://")) {
+      // File parts are also used for code-context references (text/plain, file://...).
+      // Only treat local files as "attachments" when they are images in the desktop app.
+      const mime = typeof record.mime === "string" ? record.mime : "";
+      return isTauriRuntime() && mime.startsWith("image/");
+    }
+    return isDisplayableAttachmentUrl(url);
   };
-  const attachmentsForMessage = (message: MessageWithParts) =>
-    message.parts
-      .filter(isAttachmentPart)
-      .map((part) => {
-        const record = part as { url?: string; filename?: string; mime?: string };
-        return {
-          url: record.url ?? "",
-          filename: record.filename ?? "attachment",
-          mime: record.mime ?? "application/octet-stream",
-        };
+
+  const toolImagesForPart = (part: Part) => {
+    if (part.type !== "tool") return [];
+    const state = (part as any)?.state ?? {};
+    const images = Array.isArray(state?.images) ? state.images : [];
+    return images
+      .map((item: any) => {
+        if (!item) return null;
+        if (typeof item === "string") {
+          const mime = inferMimeFromDataUrl(item) ?? "image/png";
+          return { url: item, filename: "image", mime };
+        }
+        const mediaType = typeof item?.mediaType === "string" ? item.mediaType : undefined;
+        const alt = typeof item?.alt === "string" ? item.alt : "";
+        const filename = typeof item?.filename === "string" ? item.filename : alt || "image";
+        const raw = item?.url ?? item?.src ?? item?.data;
+        if (!raw) return null;
+        const url = item?.data ? normalizeDataImageUrl(String(item.data), mediaType) : String(raw);
+        const mime = mediaType ?? inferMimeFromDataUrl(url) ?? "image/png";
+        if (!isDisplayableAttachmentUrl(url)) return null;
+        return { url, filename, mime };
       })
-      .filter((attachment) => !!attachment.url);
+      .filter(Boolean);
+  };
+
+  const toolAttachmentsForPart = (part: Part) => {
+    if (part.type !== "tool") return [];
+    const state = (part as any)?.state ?? {};
+    const attachments = Array.isArray(state?.attachments) ? state.attachments : [];
+    return attachments
+      .map((attachment: any) => {
+        const url = typeof attachment?.url === "string" ? attachment.url : "";
+        if (!isDisplayableAttachmentUrl(url)) return null;
+        const filename = typeof attachment?.filename === "string" ? attachment.filename : "attachment";
+        const mime = typeof attachment?.mime === "string" ? attachment.mime : "application/octet-stream";
+        return { url, filename, mime };
+      })
+      .filter(Boolean);
+  };
+
+  const attachmentsForParts = (parts: Part[]) => {
+    const attachments: { url: string; filename: string; mime: string }[] = [];
+
+    for (const part of parts) {
+      if (!isAttachmentPart(part)) continue;
+      const record = part as { url?: string; filename?: string; mime?: string };
+      const url = record.url ?? "";
+      if (!url) continue;
+      attachments.push({
+        url,
+        filename: record.filename ?? "attachment",
+        mime: record.mime ?? "application/octet-stream",
+      });
+    }
+
+    for (const part of parts) {
+      if (part.type !== "tool") continue;
+      attachments.push(...(toolAttachmentsForPart(part) as any));
+      attachments.push(...(toolImagesForPart(part) as any));
+    }
+
+    // Dedupe by URL (tools may report both `images` and `attachments`).
+    const seen = new Set<string>();
+    return attachments.filter((attachment) => {
+      const url = attachment.url?.trim();
+      if (!url) return false;
+      if (seen.has(url)) return false;
+      seen.add(url);
+      return true;
+    });
+  };
+
+  const attachmentsForMessage = (message: MessageWithParts) => attachmentsForParts(message.parts);
   const isImageAttachment = (mime: string) => mime.startsWith("image/");
+
+  createEffect(() => {
+    if (!expandedImage()) return;
+    const handler = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setExpandedImage(null);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    onCleanup(() => window.removeEventListener("keydown", handler));
+  });
 
   onCleanup(() => {
     if (copyTimeout !== undefined) {
@@ -165,6 +271,48 @@ export default function MessageList(props: MessageListProps) {
   const isStepsExpanded = (id: string, relatedIds: string[] = []) =>
     !props.expandedStepIds.has(id) &&
     !relatedIds.some((relatedId) => props.expandedStepIds.has(relatedId));
+
+  const AttachmentPill = (pillProps: { attachment: { url: string; filename: string; mime: string } }) => {
+    const isImage = () => isImageAttachment(pillProps.attachment.mime);
+    const openImage = () => {
+      if (!isImage()) return;
+      setExpandedImage(pillProps.attachment);
+    };
+
+    return (
+      <div
+        class={`flex items-center gap-2 rounded-2xl border border-gray-6 bg-gray-1/70 px-3 py-2 text-xs text-gray-11 ${
+          isImage() ? "cursor-pointer hover:bg-gray-2/70 transition-colors" : ""
+        }`.trim()}
+        role={isImage() ? "button" : undefined}
+        tabIndex={isImage() ? 0 : undefined}
+        title={isImage() ? "Click to enlarge" : undefined}
+        onClick={() => openImage()}
+        onKeyDown={(event) => {
+          if (!isImage()) return;
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            openImage();
+          }
+        }}
+      >
+        <Show when={isImage()} fallback={<File size={14} class="text-gray-9" />}>
+          <div class="h-12 w-12 rounded-xl bg-gray-2 overflow-hidden border border-gray-6">
+            <img
+              src={pillProps.attachment.url}
+              alt={pillProps.attachment.filename}
+              loading="lazy"
+              class="h-full w-full object-cover"
+            />
+          </div>
+        </Show>
+        <div class="max-w-[180px]">
+          <div class="truncate text-gray-12">{pillProps.attachment.filename}</div>
+          <div class="text-[10px] text-gray-9">{pillProps.attachment.mime}</div>
+        </div>
+      </div>
+    );
+  };
 
   const renderablePartsForMessage = (message: MessageWithParts) =>
     message.parts.filter((part) => {
@@ -377,10 +525,16 @@ export default function MessageList(props: MessageListProps) {
   };
 
   return (
-    <div class="space-y-6 pb-32">
-      <For each={messageBlocks()}>
-        {(block) => {
+    <>
+      <div class="space-y-6 pb-32">
+        <For each={messageBlocks()}>
+          {(block) => {
           if (block.kind === "steps-cluster") {
+            const clusterAttachments = () => {
+              const parts: Part[] = [];
+              block.partsGroups.forEach((group) => parts.push(...group));
+              return attachmentsForParts(parts);
+            };
             return (
               <div
                 class={`flex group ${block.isUser ? "justify-end" : "justify-start"}`.trim()}
@@ -394,6 +548,13 @@ export default function MessageList(props: MessageListProps) {
                       : "max-w-[68ch] text-[15px] leading-7 text-gray-12 group pl-2"
                   }`}
                 >
+                  <Show when={clusterAttachments().length > 0}>
+                    <div class={block.isUser ? "mb-3 flex flex-wrap gap-2" : "mb-4 flex flex-wrap gap-2"}>
+                      <For each={clusterAttachments()}>
+                        {(attachment) => <AttachmentPill attachment={attachment} />}
+                      </For>
+                    </div>
+                  </Show>
                   <StepsContainer
                     id={block.id}
                     relatedIds={block.stepIds.filter((stepId) => stepId !== block.id)}
@@ -422,26 +583,7 @@ export default function MessageList(props: MessageListProps) {
                 <Show when={attachmentsForMessage(block.message).length > 0}>
                   <div class={block.isUser ? "mb-3 flex flex-wrap gap-2" : "mb-4 flex flex-wrap gap-2"}>
                     <For each={attachmentsForMessage(block.message)}>
-                      {(attachment) => (
-                        <div class="flex items-center gap-2 rounded-2xl border border-gray-6 bg-gray-1/70 px-3 py-2 text-xs text-gray-11">
-                          <Show
-                            when={isImageAttachment(attachment.mime)}
-                            fallback={<File size={14} class="text-gray-9" />}
-                          >
-                            <div class="h-12 w-12 rounded-xl bg-gray-2 overflow-hidden border border-gray-6">
-                              <img
-                                src={attachment.url}
-                                alt={attachment.filename}
-                                class="h-full w-full object-cover"
-                              />
-                            </div>
-                          </Show>
-                          <div class="max-w-[180px]">
-                            <div class="truncate text-gray-12">{attachment.filename}</div>
-                            <div class="text-[10px] text-gray-9">{attachment.mime}</div>
-                          </div>
-                        </div>
-                      )}
+                      {(attachment) => <AttachmentPill attachment={attachment} />}
                     </For>
                   </div>
                 </Show>
@@ -491,9 +633,47 @@ export default function MessageList(props: MessageListProps) {
               </div>
             </div>
           );
-        }}
-      </For>
-      <Show when={props.footer}>{props.footer}</Show>
-    </div>
+          }}
+        </For>
+        <Show when={props.footer}>{props.footer}</Show>
+      </div>
+      <Show when={expandedImage()}>
+        {(img) => (
+          <div
+            class="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+            role="dialog"
+            aria-modal="true"
+            onClick={() => setExpandedImage(null)}
+          >
+            <div
+              class="w-full max-w-[min(1100px,100%)]"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div class="flex items-center justify-end mb-2">
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-2 rounded-full border border-gray-7 bg-gray-1/70 px-3 py-1.5 text-xs text-gray-12 hover:bg-gray-2/70 transition-colors"
+                  onClick={() => setExpandedImage(null)}
+                  aria-label="Close image preview"
+                >
+                  <X size={14} />
+                  Close
+                </button>
+              </div>
+              <div class="rounded-2xl border border-gray-7 bg-black/20 p-2">
+                <img
+                  src={img().url}
+                  alt={img().filename}
+                  class="w-full h-auto rounded-xl max-h-[80vh] object-contain"
+                />
+              </div>
+              <div class="mt-2 text-[11px] text-gray-12/70 truncate">
+                {img().filename} <span class="text-gray-12/50">({img().mime})</span>
+              </div>
+            </div>
+          </div>
+        )}
+      </Show>
+    </>
   );
 }

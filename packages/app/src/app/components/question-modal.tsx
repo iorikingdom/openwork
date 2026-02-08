@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import type { QuestionInfo } from "@opencode-ai/sdk/v2/client";
 
-import { Check, ChevronRight, HelpCircle } from "lucide-solid";
+import { Check, ChevronRight, HelpCircle, X } from "lucide-solid";
 
 import Button from "./button";
 
@@ -11,6 +11,7 @@ export type QuestionModalProps = {
     busy: boolean;
     onClose: () => void;
     onReply: (answers: string[][]) => void;
+    onReject: () => void;
 };
 
 export default function QuestionModal(props: QuestionModalProps) {
@@ -108,6 +109,9 @@ export default function QuestionModal(props: QuestionModalProps) {
             } else if (e.key === "ArrowUp") {
                 e.preventDefault();
                 setFocusedOptionIndex((prev) => (prev - 1 + optionsCount) % optionsCount);
+            } else if (e.key === "Escape") {
+                e.preventDefault();
+                if (!props.busy) props.onClose();
             } else if (e.key === "Enter") {
                 if (e.isComposing || e.keyCode === 229) return;
                 e.preventDefault();
@@ -132,18 +136,29 @@ export default function QuestionModal(props: QuestionModalProps) {
             <div class="fixed inset-0 z-50 bg-gray-1/60 backdrop-blur-sm flex items-center justify-center p-4">
                 <div class="bg-gray-2 border border-gray-6/70 w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
                     <div class="p-6 border-b border-gray-6/40 bg-gray-2/50">
-                        <div class="flex items-center gap-3 mb-2">
-                            <div class="w-8 h-8 rounded-full bg-blue-9/20 flex items-center justify-center text-blue-9">
-                                <HelpCircle size={18} />
-                            </div>
-                            <div>
-                                <h3 class="text-lg font-semibold text-gray-12">
-                                    {currentQuestion()!.header || "Question"}
-                                </h3>
-                                <div class="text-xs text-gray-11 font-medium">
-                                    Question {currentIndex() + 1} of {props.questions.length}
-                                </div>
-                            </div>
+                        <div class="flex items-start justify-between gap-4">
+                          <div class="flex items-center gap-3 mb-2">
+                              <div class="w-8 h-8 rounded-full bg-blue-9/20 flex items-center justify-center text-blue-9">
+                                  <HelpCircle size={18} />
+                              </div>
+                              <div>
+                                  <h3 class="text-lg font-semibold text-gray-12">
+                                      {currentQuestion()!.header || "Question"}
+                                  </h3>
+                                  <div class="text-xs text-gray-11 font-medium">
+                                      Question {currentIndex() + 1} of {props.questions.length}
+                                  </div>
+                              </div>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={props.busy}
+                            class="rounded-full p-1 text-gray-9 transition-colors hover:bg-gray-3 hover:text-gray-12 disabled:opacity-60 disabled:cursor-not-allowed"
+                            title="Not now"
+                            onClick={() => props.onClose()}
+                          >
+                            <X size={18} />
+                          </button>
                         </div>
                         <p class="text-sm text-gray-11 mt-2 leading-relaxed">
                             {currentQuestion()!.question}
@@ -212,9 +227,17 @@ export default function QuestionModal(props: QuestionModalProps) {
                             <span>navigate</span>
                             <span class="px-1.5 py-0.5 rounded border border-gray-6 bg-gray-3 font-mono ml-2">↵</span>
                             <span>select</span>
+                            <span class="px-1.5 py-0.5 rounded border border-gray-6 bg-gray-3 font-mono ml-2">Esc</span>
+                            <span>pause</span>
                         </div>
 
                         <div class="flex gap-2">
+                            <Button variant="ghost" onClick={props.onClose} disabled={props.busy}>
+                              Not now
+                            </Button>
+                            <Button variant="outline" onClick={props.onReject} disabled={props.busy}>
+                              Can't answer
+                            </Button>
                             <Show when={currentQuestion()?.multiple || currentQuestion()?.custom}>
                                 <Button onClick={handleNext} disabled={!canProceed() || props.busy} class="!px-6">
                                     {isLastQuestion() ? "Submit" : "Next"}

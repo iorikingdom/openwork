@@ -36,6 +36,8 @@ export type ScheduledTasksViewProps = {
   createSessionAndOpen: () => void;
   setPrompt: (value: string) => void;
   newTaskDisabled: boolean;
+  clientConnected: boolean;
+  openConnect: () => void;
 };
 
 const toRelative = (value?: string | null) => {
@@ -414,7 +416,11 @@ export default function ScheduledTasksView(props: ScheduledTasksViewProps) {
     if (props.source === "remote") {
       return props.sourceReady ? null : "OpenWork server unavailable. Connect to sync scheduled tasks.";
     }
-    if (!isTauriRuntime()) return "Scheduled tasks require the desktop app.";
+    if (!isTauriRuntime()) {
+      // Web clients cannot run the local scheduler. We still allow authoring prompts and
+      // generating prompts so the UI doesn't feel "dead" when disconnected.
+      return "Scheduling is desktop-only. You can still draft an automation prompt here and run it after connecting to OpenCode.";
+    }
     if (props.isWindows) return "Scheduler is not supported on Windows yet.";
     return null;
   });
@@ -516,6 +522,11 @@ export default function ScheduledTasksView(props: ScheduledTasksViewProps) {
     const promptValue = createPromptValue();
     if (!promptValue) return;
     props.setPrompt(promptValue);
+    if (!props.clientConnected) {
+      setCreateModalOpen(false);
+      props.openConnect();
+      return;
+    }
     props.createSessionAndOpen();
     setCreateModalOpen(false);
   };
@@ -593,9 +604,9 @@ export default function ScheduledTasksView(props: ScheduledTasksViewProps) {
         <button
           type="button"
           onClick={openCreateModal}
-          disabled={props.newTaskDisabled}
+          disabled={props.busy}
           class={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-            props.newTaskDisabled
+            props.busy
               ? "bg-gray-3 text-gray-8"
               : "bg-gray-12 text-gray-1 hover:bg-gray-11"
           }`}
@@ -620,7 +631,14 @@ export default function ScheduledTasksView(props: ScheduledTasksViewProps) {
 
       <Show when={supportNote()}>
         <div class="rounded-xl border border-gray-4 bg-gray-2/60 px-5 py-4 text-sm text-gray-10">
-          {supportNote()}
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>{supportNote()}</div>
+            <Show when={!props.clientConnected}>
+              <Button onClick={props.openConnect} class="text-xs">
+                Connect OpenCode
+              </Button>
+            </Show>
+          </div>
         </div>
       </Show>
 
@@ -650,8 +668,17 @@ export default function ScheduledTasksView(props: ScheduledTasksViewProps) {
                     icon={card.icon}
                     description={card.description}
                     tone={card.tone}
-                    onClick={() => launchAutomationPrompt(card.prompt)}
-                    disabled={props.newTaskDisabled}
+                    onClick={() => {
+                      // In web / disconnected mode, let the user pick a template and then
+                      // guide them to connect, instead of disabling the entire grid.
+                      if (!props.clientConnected) {
+                        props.setPrompt(card.prompt);
+                        props.openConnect();
+                        return;
+                      }
+                      launchAutomationPrompt(card.prompt);
+                    }}
+                    disabled={props.busy}
                   />
                 )}
               </For>
@@ -870,14 +897,14 @@ export default function ScheduledTasksView(props: ScheduledTasksViewProps) {
                 <button
                   type="button"
                   onClick={handleCreateAutomation}
-                  disabled={!canCreateAutomation() || props.newTaskDisabled}
+                  disabled={!canCreateAutomation() || props.busy}
                   class={`px-4 py-2 text-xs font-medium rounded-lg transition-colors ${
-                    !canCreateAutomation() || props.newTaskDisabled
+                    !canCreateAutomation() || props.busy
                       ? "bg-gray-3 text-gray-8 cursor-not-allowed"
                       : "bg-gray-12 text-gray-1 hover:bg-gray-11"
                   }`}
                 >
-                  Create
+                  {props.clientConnected ? "Create" : "Connect to run"}
                 </button>
               </div>
             </div>
