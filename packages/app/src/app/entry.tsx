@@ -3,9 +3,10 @@ import { GlobalSDKProvider } from "./context/global-sdk";
 import { GlobalSyncProvider } from "./context/global-sync";
 import { LocalProvider } from "./context/local";
 import { ServerProvider } from "./context/server";
+import { resolveDefaultOpencodeUrl } from "./lib/opencode";
 
 export default function AppEntry() {
-  const defaultUrl = "http://127.0.0.1:4096";
+  const defaultUrl = resolveDefaultOpencodeUrl();
 
   return (
     <ServerProvider defaultUrl={defaultUrl}>

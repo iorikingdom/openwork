@@ -4,6 +4,8 @@ import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 
 import { isTauriRuntime } from "../utils";
 
+const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "0.0.0.0", "[::1]"]);
+
 export function normalizeServerUrl(input: string) {
   const trimmed = input.trim();
   if (!trimmed) return;
@@ -14,6 +16,23 @@ export function normalizeServerUrl(input: string) {
 export function serverDisplayName(url: string) {
   if (!url) return "";
   return url.replace(/^https?:\/\//, "").replace(/\/+$/, "");
+}
+
+function isLoopbackUrl(input: string) {
+  const normalized = normalizeServerUrl(input) ?? "";
+  if (!normalized) return false;
+  try {
+    const url = new URL(normalized);
+    return LOOPBACK_HOSTNAMES.has(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function shouldMigrateLoopbackToDefault() {
+  if (typeof window === "undefined") return false;
+  if (isTauriRuntime()) return false;
+  return !LOOPBACK_HOSTNAMES.has(window.location.hostname);
 }
 
 type ServerContextValue = {
@@ -38,7 +57,12 @@ export function ServerProvider(props: ParentProps & { defaultUrl: string }) {
     try {
       const raw = window.localStorage.getItem("openwork.server.list");
       const parsed = raw ? (JSON.parse(raw) as unknown) : [];
-      return Array.isArray(parsed) ? parsed.filter((item) => typeof item === "string") : [];
+      return Array.isArray(parsed)
+        ? parsed
+            .filter((item) => typeof item === "string")
+            .map((item) => normalizeServerUrl(item as string) ?? "")
+            .filter((item) => Boolean(item))
+        : [];
     } catch {
       return [];
     }
@@ -59,10 +83,22 @@ export function ServerProvider(props: ParentProps & { defaultUrl: string }) {
 
     const storedList = readStoredList();
     const fallback = normalizeServerUrl(props.defaultUrl) ?? "";
-    const storedActive = normalizeServerUrl(readStoredActive());
+    const storedActive = normalizeServerUrl(readStoredActive()) ?? "";
 
-    const initialList = storedList.length ? storedList : fallback ? [fallback] : [];
-    const initialActive = storedActive || initialList[0] || fallback || "";
+    const migrateLoopback = shouldMigrateLoopbackToDefault() && Boolean(fallback);
+    const migrate = (value: string) => {
+      if (!migrateLoopback) return value;
+      if (!isLoopbackUrl(value)) return value;
+      return fallback;
+    };
+
+    const migratedList = storedList
+      .map(migrate)
+      .filter((value, index, array) => Boolean(value) && array.indexOf(value) === index);
+    const migratedActive = storedActive ? migrate(storedActive) : "";
+
+    const initialList = migratedList.length ? migratedList : fallback ? [fallback] : [];
+    const initialActive = migratedActive || initialList[0] || fallback || "";
 
     setList(initialList);
     setActiveRaw(initialActive);

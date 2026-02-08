@@ -38,7 +38,7 @@ import DashboardView from "./pages/dashboard";
 import SessionView from "./pages/session";
 import ProtoWorkspacesView from "./pages/proto-workspaces";
 import ProtoV1UxView from "./pages/proto-v1-ux";
-import { createClient, unwrap, waitForHealthy, type OpencodeAuth } from "./lib/opencode";
+import { createClient, resolveDefaultOpencodeUrl, unwrap, waitForHealthy, type OpencodeAuth } from "./lib/opencode";
 import {
   DEFAULT_MODEL,
   HIDE_TITLEBAR_PREF_KEY,
@@ -249,7 +249,7 @@ export default function App() {
 
   const [engineRuntime, setEngineRuntime] = createSignal<EngineRuntime>("openwrk");
 
-  const [baseUrl, setBaseUrl] = createSignal("http://127.0.0.1:4096");
+  const [baseUrl, setBaseUrl] = createSignal(resolveDefaultOpencodeUrl());
   const [clientDirectory, setClientDirectory] = createSignal("");
 
   const [openworkServerSettings, setOpenworkServerSettings] = createSignal<OpenworkServerSettings>({});

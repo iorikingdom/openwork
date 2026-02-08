@@ -3,6 +3,8 @@ import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 
 import { isTauriRuntime } from "../utils";
 
+export const DEFAULT_OPENCODE_URL = "http://127.0.0.1:4096";
+
 type FieldsResult<T> =
   | ({ data: T; error?: undefined } & { request: Request; response: Response })
   | ({ data?: undefined; error: unknown } & { request: Request; response: Response });
@@ -84,6 +86,29 @@ export function createClient(baseUrl: string, directory?: string, auth?: Opencod
     headers: Object.keys(headers).length ? headers : undefined,
     fetch: fetchImpl,
   });
+}
+
+export function resolveDefaultOpencodeUrl() {
+  const envUrl = typeof import.meta.env?.VITE_OPENCODE_URL === "string"
+    ? import.meta.env.VITE_OPENCODE_URL.trim()
+    : "";
+  if (envUrl) return envUrl.replace(/\/+$/, "");
+
+  // Web clients should not default to loopback when hosted on a non-loopback origin,
+  // otherwise they'll try to fetch the user's own localhost and hit CORS/security issues.
+  if (typeof window !== "undefined" && !isTauriRuntime()) {
+    const hostname = window.location.hostname;
+    const isLoopback =
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname === "[::1]" ||
+      hostname === "0.0.0.0";
+    if (!isLoopback) {
+      return `${window.location.origin}/api`;
+    }
+  }
+
+  return DEFAULT_OPENCODE_URL;
 }
 
 export async function waitForHealthy(

@@ -92,6 +92,12 @@ pnpm dev
 pnpm dev:ui
 ```
 
+To point the Web UI at a remote OpenCode server, set `VITE_OPENCODE_URL` (example: behind a reverse proxy at `/api`):
+
+```bash
+VITE_OPENCODE_URL=https://aiwork.wowtalk.jp/api pnpm dev:ui
+```
+
 ### Arch Users:
 
 ```bash
